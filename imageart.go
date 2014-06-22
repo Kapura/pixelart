@@ -19,17 +19,17 @@ const (
 	MaxWidth  = 4096
 	MaxHeight = 4096
 
-	FirstRed   = 255
-	FirstGreen = 255
-	FirstBlue  = 255
+	FirstRed   = 0
+	FirstGreen = 0
+	FirstBlue  = 0
 
-	StartX = 512
-	StartY = 512
+	StartX = 2048
+	StartY = 2048
 
 	// ChanSize affects, generally, how "smooth" the image renders.
 	// Should be between (8) and (MaxWidth * MaxHeight + 1)
 	//			smoother--^ 	rougher --^
-	ChanSize = MaxWidth*MaxHeight + 1
+	ChanSize = 512
 
 	// Note: existing file is overwritten
 	PicName = "art.png"
@@ -41,13 +41,8 @@ func sqr(x int32) int32 {
 	return x * x
 }
 
-func distance(a, b, c, x, y, z int32) (d float64) {
-	d = math.Sqrt(float64(sqr(a-x) + sqr(b-y) + sqr(c-z)))
-	return
-}
-
-func mhtnDistance(a, b, c, x, y, z int32) (d float64) {
-	d = math.Abs(float64(a-x)) + math.Abs(float64(b-y)) + math.Abs(float64(c-z))
+func distSqr(a, b, c, x, y, z int32) (d float64) {
+	d = float64(sqr(a-x) + sqr(b-y) + sqr(c-z))
 	return
 }
 
@@ -233,11 +228,12 @@ func nearestAvailableColour(r, g, b int32, colours *RGBCube) (red, green, blue i
 	} else {
 		// true = colour already used, need to find closest unused colour
 		// search colour 3space in increasing spherical shells
-		outer_radius := int32(0)             // radius of the search sphere
-		min_dist := float64(math.MaxFloat64) // initialised farther than largest possible radius
+		outer_radius := int32(0)                 // radius of the search sphere
+		min_dist_sqr := float64(math.MaxFloat64) // initialised farther than largest possible radius
 		found := false
 		for !found && outer_radius < MaxRed {
 			outer_radius++
+			previous_shell_sqr := math.Pow(float64(outer_radius-1), 2)
 			// expand in sphere about src pt until a colour is false (that is to say, unused)
 			for i := maxint(0, r-outer_radius); i < r+outer_radius && i < MaxRed; i++ {
 				// i traverses the end to end height of the sphere one level at a time i ~ r
@@ -247,13 +243,13 @@ func nearestAvailableColour(r, g, b int32, colours *RGBCube) (red, green, blue i
 					// j traverses the end to end width of the gb circle along the g axis one row at a time j ~ g
 					segment_level := math.Sqrt(float64(sqr(int32(inner_radius)) + sqr(j-g)))
 					for k := maxint(0, b-int32(segment_level)); k < b+int32(segment_level) && k < MaxBlue; k++ { // k ~ b
-						this_dist := mhtnDistance(r, g, b, i, j, k)
+						this_dist_sqr := distSqr(r, g, b, i, j, k)
 						// check that this point is not an interior point (one that was checked last time)
 						// then check that it hasn't been used
 						// then check that it's closed than the closest minimum
-						if this_dist > float64(outer_radius-1) {
-							if !colours[i][j][k] && this_dist < min_dist {
-								min_dist = this_dist
+						if this_dist_sqr > previous_shell_sqr {
+							if !colours[i][j][k] && this_dist_sqr < min_dist_sqr {
+								min_dist_sqr = this_dist_sqr
 								red = i
 								green = j
 								blue = k
@@ -265,8 +261,8 @@ func nearestAvailableColour(r, g, b int32, colours *RGBCube) (red, green, blue i
 							// this is p hacky
 							num_checked := k - maxint(0, b-int32(segment_level))
 							for k = b + int32(segment_level) - num_checked; k < b+int32(segment_level) && k < MaxBlue; k++ {
-								if !colours[i][j][k] && this_dist < min_dist {
-									min_dist = this_dist
+								if !colours[i][j][k] && this_dist_sqr < min_dist_sqr {
+									min_dist_sqr = this_dist_sqr
 									red = i
 									green = j
 									blue = k
