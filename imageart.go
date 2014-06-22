@@ -10,33 +10,26 @@ import (
 )
 
 const (
-	// caps: red < MaxRed
 	MaxRed   = 256
 	MaxGreen = 256
 	MaxBlue  = 256
 
-	// filled alpha value: a = FullAlpha
 	FullAlpha = 255
 
-	// bounds of the image to be filled.
-	// MaxWidth * MaxHeight should be <= MaxRed*MaxGreen*MaxBlue
 	MaxWidth  = 4096
 	MaxHeight = 4096
 
-	// r-g-b value of first seed point
-	FirstRed   = 0
-	FirstGreen = 0
-	FirstBlue  = 0
+	FirstRed   = 255
+	FirstGreen = 255
+	FirstBlue  = 255
 
-	// index of the start point
-	// should be within the bounds of MaxWidth and MaxHeight
-	StartX = 0
-	StartY = 0
+	StartX = 512
+	StartY = 512
 
 	// ChanSize affects, generally, how "smooth" the image renders.
-	// Should be between (8) and (MaxWidth * MaxHeight)
+	// Should be between (8) and (MaxWidth * MaxHeight + 1)
 	//			smoother--^ 	rougher --^
-	ChanSize = 8
+	ChanSize = MaxWidth*MaxHeight + 1
 
 	// Note: existing file is overwritten
 	PicName = "art.png"
@@ -44,28 +37,20 @@ const (
 
 ///// math functions
 
-// sqr returns an int32 value times itself.
-// added because int32(math.Pow(float64(x), 2)) is hard to read
 func sqr(x int32) int32 {
 	return x * x
 }
 
-// distance returns distance between points represented by
-// (a, b, c) and (x, y, z).
 func distance(a, b, c, x, y, z int32) (d float64) {
 	d = math.Sqrt(float64(sqr(a-x) + sqr(b-y) + sqr(c-z)))
 	return
 }
 
-// mhtnDistance is a manhattan distance measure between the points
-// represented by (a, b, c) and (x, y, z), that is to say the sum of
-// the differences in the x, y, and z directions.
 func mhtnDistance(a, b, c, x, y, z int32) (d float64) {
 	d = math.Abs(float64(a-x)) + math.Abs(float64(b-y)) + math.Abs(float64(c-z))
 	return
 }
 
-// maxint returns the maximum of the two integers.
 func maxint(a, b int32) int32 {
 	if b > a {
 		return b
@@ -79,9 +64,7 @@ func maxint(a, b int32) int32 {
 // field becomes true when a colour is placed in the image.
 type RGBCube [MaxRed][MaxGreen][MaxBlue]bool
 
-// Pixel contains int values for red, green, and blue along with
-// boolean indications of whether the pixel has been enqueued
-// into the channel and or filled in by the algorithm.
+// Pixel meta-struct
 type Pixel struct {
 	Colour struct {
 		red   int32
@@ -92,19 +75,12 @@ type Pixel struct {
 	Queued bool
 }
 
-// NRGBA returns a reference to a color.NRGBA object matching
-// the rgb values in the pixel with the constant FullAlpha defining
-// the alpha value of a filled pixel.
 func (c *Pixel) NRGBA() *color.NRGBA {
 	return &color.NRGBA{uint8(c.Colour.red), uint8(c.Colour.green), uint8(c.Colour.blue), FullAlpha}
 }
 
-// PixelArray is an array of the Pixel objects, and should be used to
-// interface with the underlying Pixel structure.
 type PixelArray [MaxWidth][MaxHeight]Pixel
 
-// ImageNRGBA returns a reference to a image.NRGBA object corresponding
-// to the values in the pixels at every point in the PixelArray.
 func (c *PixelArray) ImageNRGBA() *image.NRGBA {
 	pic := image.NewNRGBA(image.Rect(0, 0, MaxWidth, MaxHeight))
 	for x := 0; x < MaxWidth; x++ {
@@ -115,8 +91,6 @@ func (c *PixelArray) ImageNRGBA() *image.NRGBA {
 	return pic
 }
 
-// Set allows the user to set a given point (x, y) within the PixelArray
-// to the colour given by (red, green, blue).
 func (c *PixelArray) Set(x, y, red, green, blue int32) {
 	c[x][y].Colour.red = red
 	c[x][y].Colour.green = green
@@ -124,8 +98,6 @@ func (c *PixelArray) Set(x, y, red, green, blue int32) {
 	c[x][y].Filled = true
 }
 
-// ColourAt returns the red, green, and blue values of the pixel at a given
-// point in the PixelArray.
 func (c *PixelArray) ColourAt(x, y int32) (red, green, blue int32) {
 	red = c[x][y].Colour.red
 	green = c[x][y].Colour.green
@@ -133,17 +105,10 @@ func (c *PixelArray) ColourAt(x, y int32) (red, green, blue int32) {
 	return
 }
 
-// FilledAt returns the boolean value of whether or not the pixel has been
-// filled at the give point. Note that the Filled bool much be explicitly
-// flipped for each pixel; there is no real check to see if the colour data
-// of the pixel has been altered.
 func (c *PixelArray) FilledAt(x, y int32) bool {
 	return c[x][y].Filled
 }
 
-// QueuedAt returns the boolean value of whether or not the pixel has been
-// added to the ol' fillin' queue. Again, this must be explicitly set by
-// the code.
 func (c *PixelArray) QueuedAt(x, y int32) bool {
 	return c[x][y].Queued
 }
@@ -189,8 +154,6 @@ func (c *PixelArray) TargetColourAt(x, y int32) (red, green, blue int32) {
 
 ///// the rest of the code and whatnot
 
-// draw outputs the given image.NRGBA to disk as the filename defined
-// by PicName in the constant declarations.
 func draw(pic *image.NRGBA) {
 	fmt.Println("Drawing...")
 	file, err := os.Create(PicName)
@@ -208,11 +171,6 @@ func draw(pic *image.NRGBA) {
 	}
 }
 
-// fillPixelArray fills the PixelArray pArray by popping a point from
-// the channel ch, targeting a value by examining the neighbours to that
-// point, finding the closest unused colour to that value by scanning the
-// RGBCube cube, painting the pixel that colour and enqueueing the
-// neighbouring pixels to the original point.
 func fillPixelArray(pArray *PixelArray, cube *RGBCube, ch chan image.Point) (count int32) {
 	for count = 0; count < MaxWidth*MaxHeight; count++ {
 		point := <-ch
@@ -238,6 +196,10 @@ func fillPixelArray(pArray *PixelArray, cube *RGBCube, ch chan image.Point) (cou
 			fmt.Printf("count: %d | Painting %d, %d, %d\n", count, red, green, blue)
 		}
 
+		if count == MaxWidth*MaxHeight*15/16 {
+			fmt.Println("this last one takes the longest :(")
+		}
+
 		pArray.Set(int32(point.X), int32(point.Y), red, green, blue)
 
 		go repopulateChannel(ch, point, pArray)
@@ -245,10 +207,6 @@ func fillPixelArray(pArray *PixelArray, cube *RGBCube, ch chan image.Point) (cou
 	return
 }
 
-// repopulateChannel scans the points in the PixelArray pArray for points
-// neighbouring the given point and adds those that are neither queued
-// not filled to the channel, making note in the pArray that the point has
-// been placed in the queue.
 func repopulateChannel(ch chan image.Point, point image.Point, pArray *PixelArray) {
 	for x_offset := -1; x_offset < 2; x_offset++ {
 		if point.X+x_offset < MaxWidth && point.X+x_offset >= 0 {
@@ -265,10 +223,6 @@ func repopulateChannel(ch chan image.Point, point image.Point, pArray *PixelArra
 	}
 }
 
-// nearestAvailableColour examines the RGBCube colours to find the closest
-// unused colour to the colour represented by (r, g, b) and returns it
-// as (red, green, blue) along with noting in the RGBCube that it has been
-// returned.
 func nearestAvailableColour(r, g, b int32, colours *RGBCube) (red, green, blue int32) {
 	// check the colour cube to see if the colour has been painted yet
 	if !colours[r][g][b] {
@@ -332,7 +286,6 @@ func nearestAvailableColour(r, g, b int32, colours *RGBCube) (red, green, blue i
 	return
 }
 
-// main function does all the stuff in the right order
 func main() {
 	colours := new(RGBCube)
 
