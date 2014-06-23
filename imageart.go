@@ -113,8 +113,8 @@ func (c *PixelArray) QueuedAt(x, y int32) bool {
 // the filled nearby pixels.
 func (c *PixelArray) TargetColourAt(x, y int32) (red, green, blue int32) {
 
-	var r_sum, g_sum, b_sum int32 // temps to hold the colours of surrounding pixels
-	var filled_neighbours int32
+	var r_sum, g_sum, b_sum float64 // temps to hold the colours of surrounding pixels
+	var filled_neighbours float64
 	var x_offset, y_offset int32
 
 	for x_offset = -1; x_offset < 2; x_offset++ {
@@ -129,9 +129,9 @@ func (c *PixelArray) TargetColourAt(x, y int32) (red, green, blue int32) {
 				if y+y_offset < MaxHeight && y+y_offset >= 0 {
 					if c.FilledAt(x+x_offset, y+y_offset) {
 						r, g, b := c.ColourAt(x+x_offset, y+y_offset)
-						r_sum += r
-						g_sum += g
-						b_sum += b
+						r_sum += float64(r)
+						g_sum += float64(g)
+						b_sum += float64(b)
 						filled_neighbours++
 					}
 				}
@@ -140,9 +140,12 @@ func (c *PixelArray) TargetColourAt(x, y int32) (red, green, blue int32) {
 	}
 
 	if filled_neighbours > 0 {
-		red = r_sum / filled_neighbours
-		green = g_sum / filled_neighbours
-		blue = b_sum / filled_neighbours
+		r_sum /= filled_neighbours
+		g_sum /= filled_neighbours
+		b_sum /= filled_neighbours
+		red = int32(math.Floor(r_sum + 0.5))
+		green = int32(math.Floor(g_sum + 0.5))
+		blue = int32(math.Floor(b_sum + 0.5))
 	}
 	return
 }
@@ -283,6 +286,7 @@ func nearestAvailableColour(r, g, b int32, colours *RGBCube) (red, green, blue i
 }
 
 func main() {
+
 	colours := new(RGBCube)
 
 	picture := new(PixelArray)
