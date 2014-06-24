@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"image"
 	"image/color"
@@ -18,22 +19,41 @@ const (
 
 	MaxWidth  = 4096
 	MaxHeight = 4096
-
-	FirstRed   = 0
-	FirstGreen = 0
-	FirstBlue  = 0
-
-	StartX = 2048
-	StartY = 2048
-
-	// ChanSize affects, generally, how "smooth" the image renders.
-	// Should be between (8) and (MaxWidth * MaxHeight + 1)
-	//			smoother--^ 	rougher --^
-	ChanSize = 512
-
-	// Note: existing file is overwritten
-	PicName = "art.png"
 )
+
+var (
+	FirstRed   int32
+	FirstGreen int32
+	FirstBlue  int32
+	p_red      int
+	p_green    int
+	p_blue     int
+
+	StartX int
+	StartY int
+
+	TargetRadius int32
+	blur         int
+	ChanSize     int32
+	ch_cap       int
+
+	PicName string
+)
+
+func init() {
+	flag.IntVar(&p_red, "seed-red", 0, "red value of the initial point")
+	flag.IntVar(&p_green, "seed-green", 0, "green value of the initial point")
+	flag.IntVar(&p_blue, "seed-blue", 0, "blue value of the initial point")
+
+	flag.IntVar(&StartX, "seed-x", 0, "x position of the initial point")
+	flag.IntVar(&StartY, "seed-y", 0, "y position of the initial point")
+
+	flag.IntVar(&blur, "blur", 1, "higher values increase time required to complete image.")
+
+	flag.IntVar(&ch_cap, "chan", 8, "very high values porduce geometric patterns originating about the initial point.")
+
+	flag.StringVar(&PicName, "name", "", "name to use for final iamge file")
+}
 
 ///// math functions
 
@@ -117,9 +137,9 @@ func (c *PixelArray) TargetColourAt(x, y int32) (red, green, blue int32) {
 	var filled_neighbours float64
 	var x_offset, y_offset int32
 
-	for x_offset = -1; x_offset < 2; x_offset++ {
+	for x_offset = -TargetRadius; x_offset <= TargetRadius; x_offset++ {
 		if x+x_offset < MaxWidth && x+x_offset >= 0 {
-			for y_offset = -1; y_offset < 2; y_offset++ {
+			for y_offset = -TargetRadius; y_offset <= TargetRadius; y_offset++ {
 
 				if x_offset == 0 && y_offset == 0 {
 					//skip calling pixel
@@ -286,6 +306,15 @@ func nearestAvailableColour(r, g, b int32, colours *RGBCube) (red, green, blue i
 }
 
 func main() {
+	flag.Parse()
+	FirstRed = int32(p_red)
+	FirstGreen = int32(p_green)
+	FirstBlue = int32(p_blue)
+	TargetRadius = int32(blur)
+	ChanSize = int32(ch_cap)
+	if PicName == "" {
+		PicName = fmt.Sprintf("art.r%dg%db%d.x%dy%d.blur%d.ch%d.png", FirstRed, FirstGreen, FirstBlue, StartX, StartY, TargetRadius, ChanSize)
+	}
 
 	colours := new(RGBCube)
 
