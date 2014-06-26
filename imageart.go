@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"flag"
 	"fmt"
 	"image"
@@ -36,11 +37,12 @@ var (
 	blur         int
 	ChanSize     int32
 	ch_cap       int
+	cpu_cap      int
 
 	PicName string
 )
 
-func init() {
+func parseFlags() {
 	flag.IntVar(&p_red, "seed-red", 0, "red value of the initial point")
 	flag.IntVar(&p_green, "seed-green", 0, "green value of the initial point")
 	flag.IntVar(&p_blue, "seed-blue", 0, "blue value of the initial point")
@@ -50,9 +52,12 @@ func init() {
 
 	flag.IntVar(&blur, "blur", 1, "higher values increase time required to complete image.")
 
-	flag.IntVar(&ch_cap, "chan", 8, "very high values porduce geometric patterns originating about the initial point.")
+	flag.IntVar(&ch_cap, "chan", 8, "very high values produce geometric patterns originating about the initial point.")
 
-	flag.StringVar(&PicName, "name", "", "name to use for final iamge file")
+	flag.StringVar(&PicName, "name", "", "name to use for final image file")
+	
+	flag.IntVar(&cpu_cap, "cpu", -1, "amount of cpu's used. 0 means default go runtime settings, <0 means 'use all' (default)")
+	flag.Parse()
 }
 
 ///// math functions
@@ -306,7 +311,17 @@ func nearestAvailableColour(r, g, b int32, colours *RGBCube) (red, green, blue i
 }
 
 func main() {
-	flag.Parse()
+	parseFlags()
+
+	// Also affects CPU scheduling I suppose :)
+	if cpu_cap != 0 {
+		if (cpu_cap < 0) || (cpu_cap > runtime.NumCPU()) {
+			cpu_cap = runtime.NumCPU()
+		}
+		runtime.GOMAXPROCS(cpu_cap)
+	}
+	fmt.Printf("Using %d CPU's\n", runtime.GOMAXPROCS(0))
+
 	FirstRed = int32(p_red)
 	FirstGreen = int32(p_green)
 	FirstBlue = int32(p_blue)
