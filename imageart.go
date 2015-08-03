@@ -1,7 +1,6 @@
 package main
 
 import (
-	"runtime"
 	"flag"
 	"fmt"
 	"image"
@@ -9,6 +8,7 @@ import (
 	"image/png"
 	"math"
 	"os"
+	"runtime"
 )
 
 const (
@@ -55,8 +55,8 @@ func parseFlags() {
 	flag.IntVar(&ch_cap, "chan", 8, "very high values produce geometric patterns originating about the initial point.")
 
 	flag.StringVar(&PicName, "name", "", "name to use for final image file")
-	
-	flag.IntVar(&cpu_cap, "cpu", -1, "amount of cpu's used. 0 means default go runtime settings, <0 means 'use all' (default)")
+
+	flag.IntVar(&cpu_cap, "cpus", 0, "amount of cpu's used. 0 means default go runtime settings, <0 means 'use all' (default)")
 	flag.Parse()
 }
 
@@ -215,12 +215,20 @@ func fillPixelArray(pArray *PixelArray, cube *RGBCube, ch chan image.Point) (cou
 		red, green, blue = nearestAvailableColour(red, green, blue, cube)
 
 		// it's nice to know the algorithm is running
-		if count%(MaxWidth*MaxHeight/8) == 0 {
-			fmt.Printf("count: %d | Painting %d, %d, %d\n", count, red, green, blue)
+		if count == MaxWidth*MaxHeight*1/2 {
+			fmt.Println("1/2")
+		}
+
+		if count == MaxWidth*MaxHeight*3/4 {
+			fmt.Println("3/4")
+		}
+
+		if count == MaxWidth*MaxHeight*7/8 {
+			fmt.Println("7/8")
 		}
 
 		if count == MaxWidth*MaxHeight*15/16 {
-			fmt.Println("this last one takes the longest :(")
+			fmt.Println("15/16 (this last one takes the longest :( )")
 		}
 
 		pArray.Set(int32(point.X), int32(point.Y), red, green, blue)
@@ -319,8 +327,13 @@ func main() {
 			cpu_cap = runtime.NumCPU()
 		}
 		runtime.GOMAXPROCS(cpu_cap)
+		cpu_cap = runtime.GOMAXPROCS(0)
 	}
-	fmt.Printf("Using %d CPU's\n", runtime.GOMAXPROCS(0))
+	if cpu_cap > 1 {
+		fmt.Printf("Using %d CPUs\n", cpu_cap)
+	} else {
+		fmt.Printf("Using %d CPU\n", cpu_cap)
+	}
 
 	FirstRed = int32(p_red)
 	FirstGreen = int32(p_green)
@@ -328,7 +341,7 @@ func main() {
 	TargetRadius = int32(blur)
 	ChanSize = int32(ch_cap)
 	if PicName == "" {
-		PicName = fmt.Sprintf("art.r%dg%db%d.x%dy%d.blur%d.ch%d.png", FirstRed, FirstGreen, FirstBlue, StartX, StartY, TargetRadius, ChanSize)
+		PicName = fmt.Sprintf("art.r%dg%db%d.x%dy%d.blur%d.ch%d.cpu%d.png", FirstRed, FirstGreen, FirstBlue, StartX, StartY, TargetRadius, ChanSize, runtime.GOMAXPROCS(0))
 	}
 
 	colours := new(RGBCube)
