@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"time"
 )
 
 const (
@@ -87,16 +88,28 @@ type RGBCube [MaxRed][MaxGreen][MaxBlue]bool
 // Pixel meta-struct
 type Pixel struct {
 	Colour struct {
-		red   int32
-		green int32
-		blue  int32
+		red   uint8
+		green uint8
+		blue  uint8
 	}
 	Filled bool
 	Queued bool
 }
 
+func (c *Pixel) Red() int32 {
+	return int32(c.Colour.red)
+}
+
+func (c *Pixel) Green() int32 {
+	return int32(c.Colour.green)
+}
+
+func (c *Pixel) Blue() int32 {
+	return int32(c.Colour.blue)
+}
+
 func (c *Pixel) NRGBA() *color.NRGBA {
-	return &color.NRGBA{uint8(c.Colour.red), uint8(c.Colour.green), uint8(c.Colour.blue), FullAlpha}
+	return &color.NRGBA{c.Colour.red, c.Colour.green, c.Colour.blue, FullAlpha}
 }
 
 type PixelArray [MaxWidth][MaxHeight]Pixel
@@ -112,16 +125,16 @@ func (c *PixelArray) ImageNRGBA() *image.NRGBA {
 }
 
 func (c *PixelArray) Set(x, y, red, green, blue int32) {
-	c[x][y].Colour.red = red
-	c[x][y].Colour.green = green
-	c[x][y].Colour.blue = blue
+	c[x][y].Colour.red = uint8(red)
+	c[x][y].Colour.green = uint8(green)
+	c[x][y].Colour.blue = uint8(blue)
 	c[x][y].Filled = true
 }
 
 func (c *PixelArray) ColourAt(x, y int32) (red, green, blue int32) {
-	red = c[x][y].Colour.red
-	green = c[x][y].Colour.green
-	blue = c[x][y].Colour.blue
+	red = c[x][y].Red()
+	green = c[x][y].Green()
+	blue = c[x][y].Blue()
 	return
 }
 
@@ -319,6 +332,8 @@ func nearestAvailableColour(r, g, b int32, colours *RGBCube) (red, green, blue i
 }
 
 func main() {
+	var start_hour, start_min, start_sec = time.Now().Clock()
+	fmt.Printf("Start time: %d:%d:%d\n", start_hour, start_min, start_sec)
 	parseFlags()
 
 	// Also affects CPU scheduling I suppose :)
@@ -357,4 +372,19 @@ func main() {
 	_ = fillPixelArray(picture, colours, ch)
 
 	draw(picture.ImageNRGBA())
+
+	var end_hour, end_min, end_sec = time.Now().Clock()
+	fmt.Printf("End time: %d:%d:%d\n", end_hour, end_min, end_sec)
+	end_sec -= start_sec
+	if end_sec < 0 {
+		end_sec = 60 + end_sec
+		end_min -= 1
+	}
+	end_min -= start_min
+	if end_min < 0 {
+		end_min = 60 + end_min
+		end_hour -= 1
+	}
+	end_hour -= start_hour
+	fmt.Printf("Image drawn in %d:%d:%d\n", end_hour, end_min, end_sec)
 }
