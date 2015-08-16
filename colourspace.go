@@ -39,18 +39,18 @@ func GetColourspace(basis ColourBasis) Colourspace {
 }
 
 func (space *multiColourSpace) ColourUsed(r, g, b int32) bool {
-	switch {
-	case space.colourBasis == RGB:
+	switch space.colourBasis {
+	case RGB:
 		return space.RGBCube[r][g][b]
-	case space.colourBasis == RBG:
+	case RBG:
 		return space.RGBCube[r][b][g]
-	case space.colourBasis == GBR:
+	case GBR:
 		return space.RGBCube[g][b][r]
-	case space.colourBasis == GRB:
+	case GRB:
 		return space.RGBCube[g][r][b]
-	case space.colourBasis == BGR:
+	case BGR:
 		return space.RGBCube[b][g][r]
-	case space.colourBasis == BRG:
+	case BRG:
 		return space.RGBCube[b][r][g]
 	}
 	return false
@@ -79,36 +79,36 @@ func (space *multiColourSpace) PrepCounts() {
 }
 
 func (space *multiColourSpace) PopColour(r, g, b int32) (red, green, blue int32) {
-	switch {
-	case space.colourBasis == RGB:
+	switch space.colourBasis {
+	case RGB:
 		red, green, blue = space.basePopColour(r, g, b)
-	case space.colourBasis == RBG:
+	case RBG:
 		red, blue, green = space.basePopColour(r, b, g)
-	case space.colourBasis == GBR:
+	case GBR:
 		green, blue, red = space.basePopColour(g, b, r)
-	case space.colourBasis == GRB:
+	case GRB:
 		green, red, blue = space.basePopColour(g, r, b)
-	case space.colourBasis == BGR:
+	case BGR:
 		blue, green, red = space.basePopColour(b, g, r)
-	case space.colourBasis == BRG:
+	case BRG:
 		blue, red, green = space.basePopColour(b, r, g)
 	}
 	return
 }
 
 func (space *multiColourSpace) PopColourOpt(r, g, b int32) (red, green, blue int32) {
-	switch {
-	case space.colourBasis == RGB:
+	switch space.colourBasis {
+	case RGB:
 		red, green, blue = space.basePopColourOpt(r, g, b)
-	case space.colourBasis == RBG:
+	case RBG:
 		red, blue, green = space.basePopColourOpt(r, b, g)
-	case space.colourBasis == GBR:
+	case GBR:
 		green, blue, red = space.basePopColourOpt(g, b, r)
-	case space.colourBasis == GRB:
+	case GRB:
 		green, red, blue = space.basePopColourOpt(g, r, b)
-	case space.colourBasis == BGR:
+	case BGR:
 		blue, green, red = space.basePopColourOpt(b, g, r)
-	case space.colourBasis == BRG:
+	case BRG:
 		blue, red, green = space.basePopColourOpt(b, r, g)
 	}
 	return
