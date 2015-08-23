@@ -44,8 +44,8 @@ var (
 	colourAxes  string
 	colourBasis ColourBasis
 
-	StartX int
-	StartY int
+	SeedX int
+	SeedY int
 
 	LocalWidth  int
 	LocalHeight int
@@ -74,8 +74,8 @@ func parseFlags() {
 	flag.IntVar(&LocalHeight, "height", MaxHeight, "Output image height (if not using seed image")
 
 	flag.IntVar(&seedColour, "seed", 0x0, "seed colour (e.g. 0xFFFFFF)")
-	flag.IntVar(&StartX, "seed-x", 0, "x position of the initial point")
-	flag.IntVar(&StartY, "seed-y", 0, "y position of the initial point")
+	flag.IntVar(&SeedX, "seed-x", 0, "x position of the initial point")
+	flag.IntVar(&SeedY, "seed-y", 0, "y position of the initial point")
 	flag.StringVar(&seedImagePath, "seed-image", "", "Pre-seeded image to fill. Empty pixels are 0x000000")
 	flag.Float64Var(&seedRejectionRate, "seed-rr", 0, "Random rejection rate of seeded pixels between 0 and 1")
 	flag.IntVar(&seedChroma, "seed-chroma-key", 0xFF00FF, "Colour to treat as empty in seeded image")
@@ -354,7 +354,21 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 
 				pArray.Set(int32(sp.Pt.X), int32(sp.Pt.Y), red, green, blue)
 
-				go repopulateChannel(ch, sp.Pt, pArray)
+				go func() {
+					for x_offset := -1; x_offset < 2; x_offset++ {
+						if sp.Pt.X+x_offset < LocalWidth && sp.Pt.X+x_offset >= 0 {
+							for y_offset := -1; y_offset < 2; y_offset++ {
+								if sp.Pt.Y+y_offset < LocalHeight && sp.Pt.Y+y_offset >= 0 && !(x_offset == 0 && y_offset == 0) {
+									pt := image.Pt(sp.Pt.X+x_offset, sp.Pt.Y+y_offset)
+									if !pArray.QueuedAt(int32(pt.X), int32(pt.Y)) && !pArray.FilledAt(int32(pt.X), int32(pt.Y)) {
+										pArray[pt.X][pt.Y].Queued = true
+										ch <- pt
+									}
+								}
+							}
+						}
+					}
+				}()
 			}
 
 		} else {
@@ -396,25 +410,155 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 
 		pArray.Set(int32(point.X), int32(point.Y), red, green, blue)
 
-		go repopulateChannel(ch, point, pArray)
+		go func() {
+			for x_offset := -1; x_offset < 2; x_offset++ {
+				if point.X+x_offset < LocalWidth && point.X+x_offset >= 0 {
+					for y_offset := -1; y_offset < 2; y_offset++ {
+						if point.Y+y_offset < LocalHeight && point.Y+y_offset >= 0 && !(x_offset == 0 && y_offset == 0) {
+							pt := image.Pt(point.X+x_offset, point.Y+y_offset)
+							if !pArray.QueuedAt(int32(pt.X), int32(pt.Y)) && !pArray.FilledAt(int32(pt.X), int32(pt.Y)) {
+								pArray[pt.X][pt.Y].Queued = true
+								ch <- pt
+							}
+						}
+					}
+				}
+			}
+		}()
 	}
 
 	PicName = origPicName
 	return
 }
 
-func repopulateChannel(ch chan image.Point, point image.Point, pArray *PixelArray) {
-	for x_offset := -1; x_offset < 2; x_offset++ {
-		if point.X+x_offset < LocalWidth && point.X+x_offset >= 0 {
-			for y_offset := -1; y_offset < 2; y_offset++ {
-				if point.Y+y_offset < LocalHeight && point.Y+y_offset >= 0 && !(x_offset == 0 && y_offset == 0) {
-					pt := image.Pt(point.X+x_offset, point.Y+y_offset)
-					if !pArray.QueuedAt(int32(pt.X), int32(pt.Y)) && !pArray.FilledAt(int32(pt.X), int32(pt.Y)) {
-						pArray[pt.X][pt.Y].Queued = true
-						ch <- pt
-					}
+func processSeedImage(seedCh chan SeedPixel) {
+	bounds := seedImage.Bounds()
+	// spiral seeding
+
+	checkAndSeed := func(x, y int) { // if pixel != chroma, add to seed queue
+		var pixel SeedPixel
+		r, g, b, _ := seedImage.At(x, y).RGBA()
+		if (r/256<<16)|(g/256<<8)|b/256 != uint32(seedChroma) {
+			if FlipDraw {
+				pixel = NewSeedPixel(uint8(255-r), uint8(255-g), uint8(255-b), x, y)
+			} else {
+				pixel = NewSeedPixel(uint8(r), uint8(g), uint8(b), x, y)
+			}
+			seedCh <- pixel
+		}
+	}
+
+	scanLine := func(startX, endX, startY, endY int) {
+		if startX == endX {
+			x := startX
+			if startY < endY {
+				for y := startY; y < endY; y++ {
+					checkAndSeed(x, y)
+				}
+			} else {
+				for y := startY; y > endY; y-- {
+					checkAndSeed(x, y)
 				}
 			}
+		} else {
+			y := startY
+			if startX < endX {
+				for x := startX; x < endX; x++ {
+					checkAndSeed(x, y)
+				}
+			} else {
+				for x := startX; x > endX; x-- {
+					checkAndSeed(x, y)
+				}
+			}
+		}
+	}
+
+	// seed first pixel
+	checkAndSeed(SeedX, SeedY)
+
+	var x, y int
+	var layer int = 0
+	var xMinCap, xMaxCap, yMinCap, yMaxCap bool = false, false, false, false
+	var start, end int
+
+	for !xMinCap || !xMaxCap || !yMinCap || !yMaxCap {
+		layer++
+
+		// topright to topleft
+		y = SeedY - layer
+		if y < bounds.Min.Y {
+			yMinCap = true
+		} else {
+
+			if SeedX-layer < 0 {
+				end = 0
+			} else {
+				end = SeedX - layer
+			}
+			if SeedX+layer >= bounds.Max.X {
+				start = bounds.Max.X - 1
+			} else {
+				start = SeedX + layer
+			}
+			scanLine(start, end, y, y)
+		}
+
+		//topleft to botleft
+		x = SeedX - layer
+		if x < bounds.Min.X {
+			xMinCap = true
+		} else {
+
+			if SeedY-layer < 0 {
+				start = 0
+			} else {
+				start = SeedY - layer
+			}
+			if SeedY+layer >= bounds.Max.Y {
+				end = bounds.Max.Y - 1
+			} else {
+				end = SeedY + layer
+			}
+			scanLine(x, x, start, end)
+		}
+
+		// botleft to botright
+		y = SeedY + layer
+		if y >= bounds.Max.Y {
+			yMaxCap = true
+		} else {
+
+			if SeedX-layer < 0 {
+				start = 0
+			} else {
+				start = SeedX - layer
+			}
+			if SeedX+layer >= bounds.Max.X {
+				end = bounds.Max.X - 1
+			} else {
+				end = SeedX + layer
+			}
+			scanLine(start, end, y, y)
+		}
+
+		//botright to topright
+		x = SeedX + layer
+		if x >= bounds.Max.X {
+			xMaxCap = true
+		} else {
+
+			if SeedY-layer < 0 {
+				end = 0
+			} else {
+				end = SeedY - layer
+			}
+			if SeedY+layer >= bounds.Max.Y {
+				start = bounds.Max.Y - 1
+			} else {
+				start = SeedY + layer
+			}
+			scanLine(x, x, start, end)
 		}
 	}
 }
@@ -449,25 +593,12 @@ func main() {
 	if seedImage != nil {
 		bounds := seedImage.Bounds()
 		seedCh = make(chan SeedPixel, bounds.Max.X*bounds.Max.Y)
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-				r, g, b, _ := seedImage.At(x, y).RGBA()
-				if (r/256<<16)|(g/256<<8)|b/256 != uint32(seedChroma) {
-					var pixel SeedPixel
+		processSeedImage(seedCh)
 
-					if FlipDraw {
-						pixel = NewSeedPixel(uint8(255-r), uint8(255-g), uint8(255-b), x, y)
-					} else {
-						pixel = NewSeedPixel(uint8(r), uint8(g), uint8(b), x, y)
-					}
-					seedCh <- pixel
-				}
-			}
-		}
 	} else {
 		// seeding based on params rather than seed image
 		seedCh = make(chan SeedPixel, 1)
-		seedCh <- NewSeedPixel(uint8(p_red), uint8(p_green), uint8(p_blue), StartX, StartY)
+		seedCh <- NewSeedPixel(uint8(p_red), uint8(p_green), uint8(p_blue), SeedX, SeedY)
 	}
 
 	close(seedCh)
@@ -480,9 +611,9 @@ func main() {
 			flipped = ".flip"
 		}
 		if seedImage == nil {
-			PicName = fmt.Sprintf("%s.%s.r%dg%db%d.x%dy%d.blur%d.ch%d.cpu%d%s.png", PicTag, colourAxes, FirstRed, FirstGreen, FirstBlue, StartX, StartY, TargetRadius, ChanSize, runtime.GOMAXPROCS(0), flipped)
+			PicName = fmt.Sprintf("%s.%s.r%dg%db%d.x%dy%d.blur%d.ch%d.cpu%d%s.png", PicTag, colourAxes, FirstRed, FirstGreen, FirstBlue, SeedX, SeedY, TargetRadius, ChanSize, runtime.GOMAXPROCS(0), flipped)
 		} else {
-			PicName = fmt.Sprintf("%s.%s.rr%1.2f.blur%d.ch%d.cpu%d%s.png", PicTag, colourAxes, seedRejectionRate, TargetRadius, ChanSize, runtime.GOMAXPROCS(0), flipped)
+			PicName = fmt.Sprintf("%s.%s.rr%1.3f.x%dy%d.blur%d.ch%d.cpu%d%s.png", PicTag, colourAxes, seedRejectionRate, SeedX, SeedY, TargetRadius, ChanSize, runtime.GOMAXPROCS(0), flipped)
 		}
 	}
 
