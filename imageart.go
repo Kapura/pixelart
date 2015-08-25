@@ -33,6 +33,8 @@ var (
 	seedChroma        int
 	seedDupes         bool
 
+	echospacing float64
+
 	seedColour int
 	FirstRed   int32
 	FirstGreen int32
@@ -90,6 +92,8 @@ func parseFlags() {
 
 	flag.BoolVar(&DrawIntermediate, "ir", false, "draw intermediate representations of the image")
 	flag.BoolVar(&FlipDraw, "flip-draw", false, "flip ALL colours at the bit level after running")
+
+	flag.Float64Var(&echospacing, "es", 0, "Turn on echospacing/reseeding")
 
 	flag.IntVar(&cpu_cap, "cpus", 0, "amount of cpu's used. 0 means default go runtime settings, <0 means 'use all' (default)")
 
@@ -172,19 +176,19 @@ func timestamp() string {
 ///// type declarations
 
 // Pixel meta-struct
-type colour24 struct {
+type Colour24 struct {
 	red   uint8
 	green uint8
 	blue  uint8
 }
 
 type SeedPixel struct {
-	Colour colour24
+	Colour Colour24
 	Pt     image.Point
 }
 
 func NewSeedPixel(r, g, b uint8, x, y int) (spixel SeedPixel) {
-	spixel.Colour = colour24{r, g, b}
+	spixel.Colour = Colour24{r, g, b}
 	spixel.Pt = image.Point{x, y}
 	return
 }
@@ -202,7 +206,7 @@ func (c *SeedPixel) Blue() int32 {
 }
 
 type Pixel struct {
-	Colour colour24
+	Colour Colour24
 	Filled bool
 	Queued bool
 }
@@ -330,9 +334,6 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 	var tenth_of_pic int32 = int32(LocalWidth*LocalHeight) / 10
 	var red, green, blue int32
 
-	// initial pop function
-	GetNearestColour := cspace.PopColour
-
 	var seeds int32 = 0
 	//put in the seed pixels
 	rand.Seed(time.Now().UnixNano())
@@ -350,7 +351,7 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 
 			if !cspace.ColourUsed(sp.Red(), sp.Green(), sp.Blue()) || seedDupes {
 				seeds++
-				red, green, blue = GetNearestColour(sp.Red(), sp.Green(), sp.Blue())
+				red, green, blue = cspace.PopColour(sp.Red(), sp.Green(), sp.Blue())
 
 				pArray.Set(int32(sp.Pt.X), int32(sp.Pt.Y), red, green, blue)
 
@@ -390,7 +391,7 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 
 		red, green, blue = pArray.TargetColourAt(int32(point.X), int32(point.Y))
 
-		red, green, blue = GetNearestColour(red, green, blue)
+		red, green, blue = cspace.PopColour(red, green, blue)
 
 		// it's nice to know the algorithm is running
 		if count > ir_tag*tenth_of_pic && ir_tag < 10 {
@@ -404,8 +405,7 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 
 		if count == MaxWidth*MaxHeight*15/16 {
 			fmt.Println("Endgame optimisation... (this last one takes the longest :( )")
-			cspace.PrepCounts()
-			GetNearestColour = cspace.PopColourOpt
+			cspace.PrepOpt()
 		}
 
 		pArray.Set(int32(point.X), int32(point.Y), red, green, blue)
@@ -563,6 +563,31 @@ func processSeedImage(seedCh chan SeedPixel) {
 	}
 }
 
+func composeImageName() (name string) {
+
+	name = fmt.Sprintf("%s.%s", PicTag, colourAxes)
+
+	if seedImage == nil {
+		name += fmt.Sprintf(".r%dg%db%d", FirstRed, FirstGreen, FirstBlue)
+	} else {
+		name += fmt.Sprintf(".rr%1.3f", seedRejectionRate)
+	}
+
+	name += fmt.Sprintf(".x%dy%d.blur%d.ch%d.cpu%d", SeedX, SeedY, TargetRadius, ChanSize, runtime.GOMAXPROCS(0))
+
+	if FlipDraw {
+		name += ".flip"
+	}
+
+	if echospacing > 0 {
+		name += fmt.Sprintf(".es%1.5f", echospacing)
+	}
+
+	name += ".png"
+
+	return
+}
+
 func main() {
 
 	var start_hour, start_min, start_sec = time.Now().Clock()
@@ -587,6 +612,7 @@ func main() {
 	var seedCh chan SeedPixel
 
 	var colours Colourspace = GetColourspace(colourBasis)
+	colours.SetEchospace(echospacing)
 
 	picture := new(PixelArray)
 
@@ -606,15 +632,7 @@ func main() {
 	TargetRadius = int32(blur)
 	ChanSize = int32(ch_cap)
 	if PicName == "" {
-		flipped := ""
-		if FlipDraw {
-			flipped = ".flip"
-		}
-		if seedImage == nil {
-			PicName = fmt.Sprintf("%s.%s.r%dg%db%d.x%dy%d.blur%d.ch%d.cpu%d%s.png", PicTag, colourAxes, FirstRed, FirstGreen, FirstBlue, SeedX, SeedY, TargetRadius, ChanSize, runtime.GOMAXPROCS(0), flipped)
-		} else {
-			PicName = fmt.Sprintf("%s.%s.rr%1.3f.x%dy%d.blur%d.ch%d.cpu%d%s.png", PicTag, colourAxes, seedRejectionRate, SeedX, SeedY, TargetRadius, ChanSize, runtime.GOMAXPROCS(0), flipped)
-		}
+		PicName = composeImageName()
 	}
 
 	// changing channel size affects behaviour of colour filling;

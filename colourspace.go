@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math"
 )
 
@@ -21,12 +22,15 @@ type Colourspace interface {
 	GetMaxColourCount() int32
 	GetColourCount() int32
 	PopColour(r, g, b int32) (red, green, blue int32)
-	PrepCounts()
-	PopColourOpt(r, g, b int32) (red, green, blue int32)
+	PrepOpt()
+	SetEchospace(value float64)
 }
 
 type multiColourSpace struct {
 	colourBasis               ColourBasis
+	optimised                 bool
+	echoStartPoint            int32
+	echoQueue                 *ColourQueue
 	RGBCube                   [256][256][256]bool
 	count                     int32
 	xCounts, yCounts, zCounts [256]int32
@@ -35,6 +39,7 @@ type multiColourSpace struct {
 func GetColourspace(basis ColourBasis) Colourspace {
 	space := new(multiColourSpace)
 	space.colourBasis = basis
+	space.optimised = false
 	return space
 }
 
@@ -64,53 +69,69 @@ func (space *multiColourSpace) GetColourCount() int32 {
 	return space.count
 }
 
-func (space *multiColourSpace) PrepCounts() {
-	for x := 0; x < 256; x++ {
-		for y := 0; y < 256; y++ {
-			for z := 0; z < 256; z++ {
-				if !space.RGBCube[x][y][z] {
-					space.xCounts[x]++
-					space.yCounts[y]++
-					space.zCounts[z]++
+func (space *multiColourSpace) SetEchospace(value float64) {
+	if value == 0 {
+		space.echoStartPoint = 0
+	} else {
+		space.echoStartPoint = int32(value * float64(space.GetMaxColourCount()))
+		space.echoQueue = NewColourQueue(int(space.echoStartPoint + 1))
+	}
+}
+
+func (space *multiColourSpace) PrepOpt() {
+	if space.echoStartPoint <= 0 {
+		for x := 0; x < 256; x++ {
+			for y := 0; y < 256; y++ {
+				for z := 0; z < 256; z++ {
+					if !space.RGBCube[x][y][z] {
+						space.xCounts[x]++
+						space.yCounts[y]++
+						space.zCounts[z]++
+					}
 				}
 			}
 		}
+		space.optimised = true
 	}
 }
 
 func (space *multiColourSpace) PopColour(r, g, b int32) (red, green, blue int32) {
-	switch space.colourBasis {
-	case RGB:
-		red, green, blue = space.basePopColour(r, g, b)
-	case RBG:
-		red, blue, green = space.basePopColour(r, b, g)
-	case GBR:
-		green, blue, red = space.basePopColour(g, b, r)
-	case GRB:
-		green, red, blue = space.basePopColour(g, r, b)
-	case BGR:
-		blue, green, red = space.basePopColour(b, g, r)
-	case BRG:
-		blue, red, green = space.basePopColour(b, r, g)
-	}
-	return
-}
 
-func (space *multiColourSpace) PopColourOpt(r, g, b int32) (red, green, blue int32) {
-	switch space.colourBasis {
-	case RGB:
-		red, green, blue = space.basePopColourOpt(r, g, b)
-	case RBG:
-		red, blue, green = space.basePopColourOpt(r, b, g)
-	case GBR:
-		green, blue, red = space.basePopColourOpt(g, b, r)
-	case GRB:
-		green, red, blue = space.basePopColourOpt(g, r, b)
-	case BGR:
-		blue, green, red = space.basePopColourOpt(b, g, r)
-	case BRG:
-		blue, red, green = space.basePopColourOpt(b, r, g)
+	if space.optimised && space.echoStartPoint <= 0 {
+
+		switch space.colourBasis {
+		case RGB:
+			red, green, blue = space.basePopColourOpt(r, g, b)
+		case RBG:
+			red, blue, green = space.basePopColourOpt(r, b, g)
+		case GBR:
+			green, blue, red = space.basePopColourOpt(g, b, r)
+		case GRB:
+			green, red, blue = space.basePopColourOpt(g, r, b)
+		case BGR:
+			blue, green, red = space.basePopColourOpt(b, g, r)
+		case BRG:
+			blue, red, green = space.basePopColourOpt(b, r, g)
+		}
+
+	} else {
+
+		switch space.colourBasis {
+		case RGB:
+			red, green, blue = space.basePopColour(r, g, b)
+		case RBG:
+			red, blue, green = space.basePopColour(r, b, g)
+		case GBR:
+			green, blue, red = space.basePopColour(g, b, r)
+		case GRB:
+			green, red, blue = space.basePopColour(g, r, b)
+		case BGR:
+			blue, green, red = space.basePopColour(b, g, r)
+		case BRG:
+			blue, red, green = space.basePopColour(b, r, g)
+		}
 	}
+
 	return
 }
 
@@ -177,6 +198,16 @@ func (space *multiColourSpace) basePopColour(r, g, b int32) (red, green, blue in
 
 	space.RGBCube[red][green][blue] = true
 	space.count++
+
+	if space.echoStartPoint > 0 {
+		space.echoQueue.Push(Colour24{uint8(red), uint8(green), uint8(blue)})
+		if space.count >= space.echoStartPoint {
+			echo := space.echoQueue.Pop()
+			space.RGBCube[echo.red][echo.green][echo.blue] = false
+		}
+
+	}
+
 	return
 }
 
@@ -256,4 +287,49 @@ func (space *multiColourSpace) basePopColourOpt(r, g, b int32) (red, green, blue
 	space.RGBCube[red][green][blue] = true
 	space.count++
 	return
+}
+
+// Queue shit from https://gist.github.com/moraes/2141121
+
+// NewQueue returns a new queue with the given initial size.
+func NewColourQueue(size int) *ColourQueue {
+	return &ColourQueue{
+		nodes: make([]Colour24, size),
+		size:  size,
+	}
+}
+
+// Queue is a basic FIFO queue based on a circular list that resizes as needed.
+type ColourQueue struct {
+	nodes []Colour24
+	size  int
+	head  int
+	tail  int
+	count int
+}
+
+// Push adds a node to the queue.
+func (q *ColourQueue) Push(n Colour24) {
+	if q.head == q.tail && q.count > 0 {
+		nodes := make([]Colour24, len(q.nodes)+q.size)
+		copy(nodes, q.nodes[q.head:])
+		copy(nodes[len(q.nodes)-q.head:], q.nodes[:q.head])
+		q.head = 0
+		q.tail = len(q.nodes)
+		q.nodes = nodes
+	}
+	q.nodes[q.tail] = n
+	q.tail = (q.tail + 1) % len(q.nodes)
+	q.count++
+}
+
+// Pop removes and returns a node from the queue in first to last order.
+func (q *ColourQueue) Pop() Colour24 {
+	if q.count == 0 {
+		panic(fmt.Errorf("%s", "Error: trying to pop empty ColourQueue"))
+	}
+	node := q.nodes[q.head]
+	q.head = (q.head + 1) % len(q.nodes)
+	q.count--
+	return node
 }
