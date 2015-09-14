@@ -18,10 +18,10 @@ const (
 )
 
 type Colourspace interface {
-	ColourUsed(r, g, b int32) bool
+	ColourUsed(c Colour) bool
 	GetMaxColourCount() int32
 	GetColourCount() int32
-	PopColour(r, g, b int32) (red, green, blue int32)
+	PopColour(c Colour) Colour24
 	PrepOpt()
 	SetEchospace(value float64)
 }
@@ -43,7 +43,8 @@ func GetColourspace(basis ColourBasis) Colourspace {
 	return space
 }
 
-func (space *multiColourSpace) ColourUsed(r, g, b int32) bool {
+func (space *multiColourSpace) ColourUsed(c Colour) bool {
+	var r, g, b int32 = c.Red(), c.Green(), c.Blue()
 	switch space.colourBasis {
 	case RGB:
 		return space.RGBCube[r][g][b]
@@ -95,7 +96,9 @@ func (space *multiColourSpace) PrepOpt() {
 	}
 }
 
-func (space *multiColourSpace) PopColour(r, g, b int32) (red, green, blue int32) {
+func (space *multiColourSpace) PopColour(c Colour) Colour24 {
+	var r, g, b int32 = c.Red(), c.Green(), c.Blue()
+	var red, green, blue int32
 
 	if space.optimised && space.echoStartPoint <= 0 {
 
@@ -132,7 +135,7 @@ func (space *multiColourSpace) PopColour(r, g, b int32) (red, green, blue int32)
 		}
 	}
 
-	return
+	return Colour24{uint8(red), uint8(green), uint8(blue)}
 }
 
 func (space *multiColourSpace) basePopColour(r, g, b int32) (red, green, blue int32) {
@@ -153,14 +156,14 @@ func (space *multiColourSpace) basePopColour(r, g, b int32) (red, green, blue in
 			outer_radius++
 			previous_shell_sqr := math.Pow(float64(outer_radius-1), 2)
 			// expand in sphere about src pt until a colour is false (that is to say, unused)
-			for i := maxint(0, r-outer_radius); i < r+outer_radius && i < MaxRed; i++ {
+			for i := maxint32(0, r-outer_radius); i < r+outer_radius && i < MaxRed; i++ {
 				// i traverses the end to end height of the sphere one level at a time i ~ r
 				inner_radius := math.Sqrt(float64(sqr(outer_radius) + sqr(i-r)))
 				// inner_radius = radius of (green-blue) circle at level i along sphere
-				for j := maxint(0, g-int32(inner_radius)); j < g+int32(inner_radius) && j < MaxGreen; j++ {
+				for j := maxint32(0, g-int32(inner_radius)); j < g+int32(inner_radius) && j < MaxGreen; j++ {
 					// j traverses the end to end width of the gb circle along the g axis one row at a time j ~ g
 					segment_level := math.Sqrt(float64(sqr(int32(inner_radius)) + sqr(j-g)))
-					for k := maxint(0, b-int32(segment_level)); k < b+int32(segment_level) && k < MaxBlue; k++ { // k ~ b
+					for k := maxint32(0, b-int32(segment_level)); k < b+int32(segment_level) && k < MaxBlue; k++ { // k ~ b
 						this_dist_sqr := float64(distSqr(r, g, b, i, j, k))
 						// check that this point is not an interior point (one that was checked last time)
 						// then check that it hasn't been used
@@ -177,7 +180,7 @@ func (space *multiColourSpace) basePopColour(r, g, b int32) (red, green, blue in
 							// this_dist < outer radius - 1: this point was picked up in the previous shell
 							// loop on the similar points across the axis relative to the point, then break
 							// this is p hacky
-							num_checked := k - maxint(0, b-int32(segment_level))
+							num_checked := k - maxint32(0, b-int32(segment_level))
 							for k = b + int32(segment_level) - num_checked; k < b+int32(segment_level) && k < MaxBlue; k++ {
 								if !space.RGBCube[i][j][k] && this_dist_sqr < min_dist_sqr {
 									min_dist_sqr = this_dist_sqr
@@ -229,20 +232,20 @@ func (space *multiColourSpace) basePopColourOpt(r, g, b int32) (red, green, blue
 			outer_radius++
 			previous_shell_sqr := math.Pow(float64(outer_radius-1), 2)
 			// expand in sphere about src pt until a colour is false (that is to say, unused)
-			for i := maxint(0, r-outer_radius); i < r+outer_radius && i < MaxRed; i++ {
+			for i := maxint32(0, r-outer_radius); i < r+outer_radius && i < MaxRed; i++ {
 				if space.xCounts[i] <= 0 {
 					continue
 				}
 				// i traverses the end to end height of the sphere one level at a time i ~ r
 				inner_radius := math.Sqrt(float64(sqr(outer_radius) + sqr(i-r)))
 				// inner_radius = radius of (green-blue) circle at level i along sphere
-				for j := maxint(0, g-int32(inner_radius)); j < g+int32(inner_radius) && j < MaxGreen; j++ {
+				for j := maxint32(0, g-int32(inner_radius)); j < g+int32(inner_radius) && j < MaxGreen; j++ {
 					if space.yCounts[j] <= 0 {
 						continue
 					}
 					// j traverses the end to end width of the gb circle along the g axis one row at a time j ~ g
 					segment_level := math.Sqrt(float64(sqr(int32(inner_radius)) + sqr(j-g)))
-					for k := maxint(0, b-int32(segment_level)); k < b+int32(segment_level) && k < MaxBlue; k++ { // k ~ b
+					for k := maxint32(0, b-int32(segment_level)); k < b+int32(segment_level) && k < MaxBlue; k++ { // k ~ b
 						if space.zCounts[k] <= 0 {
 							continue
 						}
@@ -262,7 +265,7 @@ func (space *multiColourSpace) basePopColourOpt(r, g, b int32) (red, green, blue
 							// this_dist < outer radius - 1: this point was picked up in the previous shell
 							// loop on the similar points across the axis relative to the point, then break
 							// this is p hacky
-							num_checked := k - maxint(0, b-int32(segment_level))
+							num_checked := k - maxint32(0, b-int32(segment_level))
 							for k = b + int32(segment_level) - num_checked; k < b+int32(segment_level) && k < MaxBlue; k++ {
 								if !space.RGBCube[i][j][k] && this_dist_sqr < min_dist_sqr {
 									min_dist_sqr = this_dist_sqr
