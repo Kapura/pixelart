@@ -17,6 +17,25 @@ const (
 	BRG
 )
 
+func ToString(cb ColourBasis) string {
+	switch cb {
+	case RGB:
+		return "rgb"
+	case RBG:
+		return "rbg"
+	case GBR:
+		return "gbr"
+	case GRB:
+		return "grb"
+	case BGR:
+		return "bgr"
+	case BRG:
+		return "brg"
+	default:
+		return""
+	}
+}
+
 type Colourspace interface {
 	ColourUsed(c Colour) bool
 	GetMaxColourCount() int32

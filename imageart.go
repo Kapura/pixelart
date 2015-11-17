@@ -1,14 +1,9 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"image"
-	"image/jpeg"
-	"image/png"
 	"math/rand"
-	"os"
-	"path/filepath"
 	"runtime"
 	"time"
 )
@@ -23,130 +18,6 @@ const (
 	MaxWidth  = 4096
 	MaxHeight = 4096
 )
-
-var (
-	seedImagePath     string
-	seedImage         image.Image
-	seedRejectionRate float64
-	seedChroma        int
-	seedDupes         bool
-
-	echospacing float64
-
-	seedColour int
-	FirstRed   int32
-	FirstGreen int32
-	FirstBlue  int32
-	p_red      int
-	p_green    int
-	p_blue     int
-
-	colourAxes  string
-	colourBasis ColourBasis
-
-	SeedX int
-	SeedY int
-
-	LocalWidth  int
-	LocalHeight int
-
-	TargetRadius int32
-	blur         int
-	ChanSize     int32
-	ch_cap       int
-	cpu_cap      int
-
-	DrawIntermediate bool
-	FlipDraw         bool
-
-	PicTag  string
-	PicName string
-)
-
-func parseFlags() {
-	flag.IntVar(&p_red, "seed-red", 0, "red value of the initial point")
-	flag.IntVar(&p_green, "seed-green", 0, "green value of the initial point")
-	flag.IntVar(&p_blue, "seed-blue", 0, "blue value of the initial point")
-
-	flag.StringVar(&colourAxes, "colour-basis", "rgb", "colour axes to use: one of [rgb, rbg, gbr, grb, bgr, brg]")
-
-	flag.IntVar(&LocalWidth, "width", 4096, "Output image width (if not using seed image)")
-	flag.IntVar(&LocalHeight, "height", 4096, "Output image height (if not using seed image")
-
-	flag.IntVar(&seedColour, "seed", 0x0, "seed colour (e.g. 0xFFFFFF)")
-	flag.IntVar(&SeedX, "seed-x", 0, "x position of the initial point")
-	flag.IntVar(&SeedY, "seed-y", 0, "y position of the initial point")
-	flag.StringVar(&seedImagePath, "seed-image", "", "Pre-seeded image to fill. Empty pixels are 0x000000")
-	flag.Float64Var(&seedRejectionRate, "seed-rr", 0, "Random rejection rate of seeded pixels between 0 and 1")
-	flag.IntVar(&seedChroma, "seed-chroma-key", 0xFF00FF, "Colour to treat as empty in seeded image")
-	flag.BoolVar(&seedDupes, "seed-dupes", false, "Search for repeated colours in input image. Takes a bit.")
-
-	flag.IntVar(&blur, "blur", 1, "higher values increase time required to complete image.")
-
-	flag.IntVar(&ch_cap, "chan", 8, "very high values produce geometric patterns originating about the initial point.")
-
-	flag.StringVar(&PicName, "name", "", "name to use for final image file")
-	flag.StringVar(&PicTag, "tag", "art", "tags for intermediate representation and final file (if no PicName specified)")
-
-	flag.BoolVar(&DrawIntermediate, "ir", false, "draw intermediate representations of the image")
-	flag.BoolVar(&FlipDraw, "flip-draw", false, "flip ALL colours at the bit level after running")
-
-	flag.Float64Var(&echospacing, "es", 0, "Turn on echospacing/reseeding")
-
-	flag.IntVar(&cpu_cap, "cpus", -1, "amount of cpu's used. 0 means default go runtime settings, <0 means 'use all' (default)")
-
-	flag.Parse()
-
-	if seedColour != 0x0 {
-		p_red = seedColour >> 16
-		p_green = (seedColour & 0x00FF00) >> 8
-		p_blue = seedColour & 0x0000FF
-	}
-
-	if seedImagePath != "" {
-		extension := filepath.Ext(seedImagePath)
-
-		file, err := os.Open(seedImagePath)
-
-		if err != nil {
-			panic(err)
-		}
-
-		if extension == ".png" {
-			seedImage, err = png.Decode(file)
-		} else if extension == ".jpeg" || extension == ".jpg" {
-			seedImage, err = jpeg.Decode(file)
-		} else {
-			fmt.Println("Cannot open file", seedImagePath)
-		}
-
-		if err != nil {
-			panic(err)
-		}
-		err = file.Close()
-		if err != nil {
-			panic(err)
-		}
-
-		LocalWidth = seedImage.Bounds().Max.X
-		LocalHeight = seedImage.Bounds().Max.Y
-	}
-
-	switch colourAxes {
-	case "rgb":
-		colourBasis = RGB
-	case "rbg":
-		colourBasis = RBG
-	case "gbr":
-		colourBasis = GBR
-	case "grb":
-		colourBasis = GRB
-	case "bgr":
-		colourBasis = BGR
-	case "brg":
-		colourBasis = BRG
-	}
-}
 
 ///// math functions
 
@@ -180,18 +51,13 @@ func minint(a, b int) int {
 	return a
 }
 
-func timestamp() string {
-	var hour, min, sec = time.Now().Clock()
-	return fmt.Sprintf("%02d:%02d:%02d", hour, min, sec)
-}
-
 ///// the rest of the code and whatnot
 
-func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixel, ch chan image.Point) (count int32) {
+func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixel, ch chan image.Point, args GenerateArgs) (count int32) {
 	// for printing intermediate images
-	origPicName := PicName
+	origPicName := args.name
 	var ir_tag int32 = 1
-	var tenth_of_pic int32 = int32(LocalWidth*LocalHeight) / 10
+	var tenth_of_pic int32 = int32(args.width*args.height) / 10
 	var tmp_colour Colour24
 
 	var seeds int32 = 0
@@ -202,7 +68,7 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 		if more {
 			// seed pixel from channel
 
-			if !cspace.ColourUsed(sp) || seedDupes {
+			if !cspace.ColourUsed(sp) || args.reseed_dupes {
 				seeds++
 				tmp_colour = cspace.PopColour(sp)
 
@@ -210,9 +76,9 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 
 				go func() {
 					for x_offset := -1; x_offset < 2; x_offset++ {
-						if sp.Pt.X+x_offset < LocalWidth && sp.Pt.X+x_offset >= 0 {
+						if sp.Pt.X+x_offset < args.width && sp.Pt.X+x_offset >= 0 {
 							for y_offset := -1; y_offset < 2; y_offset++ {
-								if sp.Pt.Y+y_offset < LocalHeight && sp.Pt.Y+y_offset >= 0 && !(x_offset == 0 && y_offset == 0) {
+								if sp.Pt.Y+y_offset < args.height && sp.Pt.Y+y_offset >= 0 && !(x_offset == 0 && y_offset == 0) {
 									pt := image.Pt(sp.Pt.X+x_offset, sp.Pt.Y+y_offset)
 									if !pArray.QueuedAt(int32(pt.X), int32(pt.Y)) && !pArray.FilledAt(int32(pt.X), int32(pt.Y)) {
 										pArray[pt.X][pt.Y].Queued = true
@@ -232,7 +98,7 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 		}
 	}
 
-	for count = seeds; count < int32(LocalWidth*LocalHeight); count++ {
+	for count = seeds; count < int32(args.width*args.height); count++ {
 		point := <-ch
 
 		//in the case of a point being re-queued after being filled
@@ -242,16 +108,16 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 			continue
 		}
 
-		tmp_colour = pArray.TargetColourAt(int32(point.X), int32(point.Y))
+		tmp_colour = pArray.TargetColourAt(int32(point.X), int32(point.Y), args)
 
 		tmp_colour = cspace.PopColour(tmp_colour)
 
 		// it's nice to know the algorithm is running
 		if count > ir_tag*tenth_of_pic && ir_tag < 10 {
 			fmt.Printf("[%s] %d%% of pixels filled\n", timestamp(), ir_tag*10)
-			if DrawIntermediate {
-				PicName = fmt.Sprintf("%s.%d.png", PicTag, ir_tag)
-				go draw(pArray.ImageNRGBA())
+			if args.draw_ir {
+				args.name = fmt.Sprintf("%s.%d.png", args.tag, ir_tag)
+				go draw(pArray.ImageNRGBA(args), args)
 			}
 			ir_tag++
 		}
@@ -265,9 +131,9 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 
 		go func() {
 			for x_offset := -1; x_offset < 2; x_offset++ {
-				if point.X+x_offset < LocalWidth && point.X+x_offset >= 0 {
+				if point.X+x_offset < args.width && point.X+x_offset >= 0 {
 					for y_offset := -1; y_offset < 2; y_offset++ {
-						if point.Y+y_offset < LocalHeight && point.Y+y_offset >= 0 && !(x_offset == 0 && y_offset == 0) {
+						if point.Y+y_offset < args.height && point.Y+y_offset >= 0 && !(x_offset == 0 && y_offset == 0) {
 							pt := image.Pt(point.X+x_offset, point.Y+y_offset)
 							if !pArray.QueuedAt(int32(pt.X), int32(pt.Y)) && !pArray.FilledAt(int32(pt.X), int32(pt.Y)) {
 								pArray[pt.X][pt.Y].Queued = true
@@ -280,22 +146,22 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 		}()
 	}
 
-	PicName = origPicName
+	args.name = origPicName
 	return
 }
 
-func processSeedImage(seedCh chan SeedPixel) {
-	bounds := seedImage.Bounds()
+func processSeedImage(seedCh chan SeedPixel, args GenerateArgs) {
+	bounds := args.seed_image.Bounds()
 	// spiral seeding
 
 	checkAndSeed := func(x, y int) { // if pixel != chroma, add to seed queue
 		var pixel SeedPixel
-		r, g, b, _ := seedImage.At(x, y).RGBA()
-		if (r/256<<16)|(g/256<<8)|b/256 != uint32(seedChroma) {
+		r, g, b, _ := args.seed_image.At(x, y).RGBA()
+		if (r/256<<16)|(g/256<<8)|b/256 != uint32(args.chroma_colour) {
 			// randomly cull a set percentage to get more balanced images
-			if seedRejectionRate > 0 {
-				if rand.Float64() > seedRejectionRate {
-					if FlipDraw {
+			if args.seed_rejection_rate > 0 {
+				if rand.Float64() > args.seed_rejection_rate {
+					if args.flip_draw {
 						pixel = NewSeedPixel(uint8(255-r), uint8(255-g), uint8(255-b), x, y)
 					} else {
 						pixel = NewSeedPixel(uint8(r), uint8(g), uint8(b), x, y)
@@ -336,7 +202,7 @@ func processSeedImage(seedCh chan SeedPixel) {
 	}
 
 	// seed first pixel
-	checkAndSeed(SeedX, SeedY)
+	checkAndSeed(args.start_x, args.start_y)
 
 	var x, y int
 	var layer int = 0
@@ -348,142 +214,145 @@ func processSeedImage(seedCh chan SeedPixel) {
 		layer++
 
 		// topright to topleft
-		y = SeedY - layer
+		y = args.start_y - layer
 		if y < bounds.Min.Y {
 			yMinCap = true
 		} else {
-			start = minint(SeedX+layer, bounds.Max.X-1)
-			end = maxint(SeedX-layer, bounds.Min.X)
+			start = minint(args.start_x+layer, bounds.Max.X-1)
+			end = maxint(args.start_x-layer, bounds.Min.X)
 			scanLine(start, end, y, y)
 		}
 
 		//topleft to botleft
-		x = SeedX - layer
+		x = args.start_x - layer
 		if x < bounds.Min.X {
 			xMinCap = true
 		} else {
-			start = maxint(SeedY-layer, bounds.Min.Y)
-			end = minint(SeedY+layer, bounds.Max.Y-1)
+			start = maxint(args.start_y-layer, bounds.Min.Y)
+			end = minint(args.start_y+layer, bounds.Max.Y-1)
 			scanLine(x, x, start, end)
 		}
 
 		// botleft to botright
-		y = SeedY + layer
+		y = args.start_y + layer
 		if y >= bounds.Max.Y {
 			yMaxCap = true
 		} else {
-			start = maxint(SeedX-layer, bounds.Min.X)
-			end = minint(SeedX+layer, bounds.Max.X-1)
+			start = maxint(args.start_x-layer, bounds.Min.X)
+			end = minint(args.start_x+layer, bounds.Max.X-1)
 			scanLine(start, end, y, y)
 		}
 
 		//botright to topright
-		x = SeedX + layer
+		x = args.start_x + layer
 		if x >= bounds.Max.X {
 			xMaxCap = true
 		} else {
-			start = minint(SeedY+layer, bounds.Max.Y-1)
-			end = maxint(SeedY-layer, 0)
+			start = minint(args.start_y+layer, bounds.Max.Y-1)
+			end = maxint(args.start_y-layer, 0)
 			scanLine(x, x, start, end)
 		}
 	}
 	close(seedCh)
 }
 
-func composeImageName() (name string) {
-	name = fmt.Sprintf("%s.%s", PicTag, colourAxes)
+func composeImageName(args GenerateArgs) (name string) {
+	name = fmt.Sprintf("%s.%s", args.tag, ToString(args.colour_basis))
 
-	if seedImage == nil {
-		name += fmt.Sprintf(".r%dg%db%d", FirstRed, FirstGreen, FirstBlue)
+	if args.seed_image == nil {
+		name += fmt.Sprintf(".r%dg%db%d", args.start_red, args.start_green, args.start_blue)
 	} else {
-		name += fmt.Sprintf(".rr%1.3f", seedRejectionRate)
+		name += fmt.Sprintf(".rr%1.3f", args.seed_rejection_rate)
 	}
 
-	name += fmt.Sprintf(".x%dy%d.blur%d.ch%d.cpu%d", SeedX, SeedY, TargetRadius, ChanSize, runtime.GOMAXPROCS(0))
+	name += fmt.Sprintf(".x%dy%d.blur%d.ch%d.cpu%d", args.start_x, args.start_y, args.blur, args.chan_size, runtime.GOMAXPROCS(0))
 
-	if FlipDraw {
+	if args.flip_draw {
 		name += ".flip"
 	}
 
-	if echospacing > 0 {
-		name += fmt.Sprintf(".es%1.5f", echospacing)
+	if args.echospace > 0 {
+		name += fmt.Sprintf(".es%1.5f", args.echospace)
 	}
 
 	name += ".png"
 	return
 }
 
-func main() {
+type GenerateArgs struct {
+	cpus int
+	chan_size int32
+	blur int32
+	colour_basis ColourBasis
+	echospace float64
+	flip_draw bool
+	draw_ir bool
 
-	var start_hour, start_min, start_sec = time.Now().Clock()
-	fmt.Printf("Start time: %d:%d:%d\n", start_hour, start_min, start_sec)
+	name string
+	tag string
 
-	parseFlags()
+	seed_image image.Image
+	seed_rejection_rate float64
+	reseed_dupes bool
+	chroma_colour int
 
+	start_red int
+	start_green int
+	start_blue int
+	start_x int
+	start_y int
+
+	height int
+	width int
+}
+
+func Generate(args GenerateArgs) {
 	// Also affects CPU scheduling I suppose :)
-	if cpu_cap != 0 {
-		if (cpu_cap < 0) || (cpu_cap > runtime.NumCPU()) {
-			cpu_cap = runtime.NumCPU()
+	if args.cpus != 0 {
+		if (args.cpus < 0) || (args.cpus > runtime.NumCPU()) {
+			args.cpus = runtime.NumCPU()
 		}
-		runtime.GOMAXPROCS(cpu_cap)
-		cpu_cap = runtime.GOMAXPROCS(0)
-	}
-	if cpu_cap > 1 {
-		fmt.Printf("Using %d CPUs\n", cpu_cap)
-	} else {
-		fmt.Printf("Using %d CPU\n", cpu_cap)
+		runtime.GOMAXPROCS(args.cpus)
+		args.cpus = runtime.GOMAXPROCS(0)
 	}
 
 	var seedCh chan SeedPixel
 
-	var colours Colourspace = GetColourspace(colourBasis)
-	colours.SetEchospace(echospacing)
+	var colours Colourspace = GetColourspace(args.colour_basis)
+	colours.SetEchospace(args.echospace)
 
 	picture := new(PixelArray)
 
-	if seedImage != nil {
-		bounds := seedImage.Bounds()
+	if args.seed_image != nil {
+		bounds := args.seed_image.Bounds()
 		chanSize := (bounds.Max.X * bounds.Max.Y)
-		if seedRejectionRate > 0 {
-			chanSize = int(float64(chanSize) * (1 - (seedRejectionRate * seedRejectionRate)))
+		if args.seed_rejection_rate > 0 {
+			chanSize = int(float64(chanSize) * (1 - (args.seed_rejection_rate * args.seed_rejection_rate)))
 		}
 		seedCh = make(chan SeedPixel, chanSize)
-		go processSeedImage(seedCh)
+		go processSeedImage(seedCh, args)
 
 	} else {
 		// seeding based on params rather than seed image
 		seedCh = make(chan SeedPixel, 1)
-		seedCh <- NewSeedPixel(uint8(p_red), uint8(p_green), uint8(p_blue), SeedX, SeedY)
+		seedCh <- NewSeedPixel(
+			uint8(args.start_red),
+			uint8(args.start_green),
+			uint8(args.start_blue),
+			args.start_x,
+			args.start_y)
 
 		close(seedCh)
 	}
 
-	TargetRadius = int32(blur)
-	ChanSize = int32(ch_cap)
-	if PicName == "" {
-		PicName = composeImageName()
+	if args.name == "" {
+		args.name = composeImageName(args)
 	}
 
 	// changing channel size affects behaviour of colour filling;
 	// or rather, it makes CPU scheduling choices have a greater impact
-	ch := make(chan image.Point, ChanSize)
-	_ = fillPixelArray(picture, colours, seedCh, ch)
+	ch := make(chan image.Point, args.chan_size)
+	_ = fillPixelArray(picture, colours, seedCh, ch, args)
 
-	draw(picture.ImageNRGBA())
-
-	var end_hour, end_min, end_sec = time.Now().Clock()
-	fmt.Printf("End time: %d:%d:%d\n", end_hour, end_min, end_sec)
-	end_sec -= start_sec
-	if end_sec < 0 {
-		end_sec = 60 + end_sec
-		end_min -= 1
-	}
-	end_min -= start_min
-	if end_min < 0 {
-		end_min = 60 + end_min
-		end_hour -= 1
-	}
-	end_hour -= start_hour
-	fmt.Printf("Image drawn in %d:%d:%d\n", end_hour, end_min, end_sec)
-
+	draw(picture.ImageNRGBA(args), args)
 }
