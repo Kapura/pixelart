@@ -76,8 +76,8 @@ func (c Pixel) Blue() int32 {
 	return c.Colour.Blue()
 }
 
-func (c *Pixel) NRGBA(args GenerateArgs) *color.NRGBA {
-	if args.flip_draw {
+func (c *Pixel) NRGBA(flip_draw bool) *color.NRGBA {
+	if flip_draw {
 		return &color.NRGBA{255 - c.Colour.red, 255 - c.Colour.green, 255 - c.Colour.blue, FullAlpha}
 	} else {
 		return &color.NRGBA{c.Colour.red, c.Colour.green, c.Colour.blue, FullAlpha}
@@ -87,11 +87,11 @@ func (c *Pixel) NRGBA(args GenerateArgs) *color.NRGBA {
 // representation of the image as a 2D array
 type PixelArray [MaxWidth][MaxHeight]Pixel
 
-func (p *PixelArray) ImageNRGBA(args GenerateArgs) *image.NRGBA {
-	pic := image.NewNRGBA(image.Rect(0, 0, args.width, args.height))
-	for x := 0; x < args.width; x++ {
-		for y := 0; y < args.height; y++ {
-			pic.Set(x, y, p[x][y].NRGBA(args))
+func (p *PixelArray) ImageNRGBA(width, height int, flip_draw bool) *image.NRGBA {
+	pic := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for x := 0; x < width; x++ {
+		for y := 0; y < height; y++ {
+			pic.Set(x, y, p[x][y].NRGBA(flip_draw))
 		}
 	}
 	return pic
@@ -120,22 +120,22 @@ func (p *PixelArray) QueuedAt(x, y int32) bool {
 // TargetColourAt examines the neighbouring pixels to the point (x, y) and
 // returns an unweighted average of the red, green, and blue channels of
 // the filled nearby pixels.
-func (c *PixelArray) TargetColourAt(x, y int32, args GenerateArgs) Colour24 {
+func (c *PixelArray) TargetColourAt(x, y, blur int32, width, height int) Colour24 {
 
 	var r_sum, g_sum, b_sum float64 // temps to hold the colours of surrounding pixels
 	var filled_neighbours float64
 	var x_offset, y_offset int32
 
-	for x_offset = -args.blur; x_offset <= args.blur; x_offset++ {
-		if x+x_offset < int32(args.width) && x+x_offset >= 0 {
-			for y_offset = -args.blur; y_offset <= args.blur; y_offset++ {
+	for x_offset = -blur; x_offset <= blur; x_offset++ {
+		if x+x_offset < int32(width) && x+x_offset >= 0 {
+			for y_offset = -blur; y_offset <= blur; y_offset++ {
 
 				if x_offset == 0 && y_offset == 0 {
 					//skip calling pixel
 					continue
 				}
 
-				if y+y_offset < int32(args.height) && y+y_offset >= 0 {
+				if y+y_offset < int32(height) && y+y_offset >= 0 {
 					if c.FilledAt(x+x_offset, y+y_offset) {
 						k := c.ColourAt(x+x_offset, y+y_offset)
 						r_sum += float64(k.red)
@@ -161,9 +161,9 @@ func (c *PixelArray) TargetColourAt(x, y int32, args GenerateArgs) Colour24 {
 }
 
 // draw function for the final image
-func draw(pic *image.NRGBA, args GenerateArgs) {
-	fmt.Println("Drawing", args.name)
-	file, err := os.Create(args.name)
+func draw(pic *image.NRGBA, name string) {
+	fmt.Println("Drawing", name)
+	file, err := os.Create(name)
 
 	if err != nil {
 		panic(err)

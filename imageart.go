@@ -57,7 +57,7 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 	// for printing intermediate images
 	origPicName := args.name
 	var ir_tag int32 = 1
-	var tenth_of_pic int32 = int32(args.width*args.height) / 10
+	var pic_fraction int32 = int32(args.width*args.height) / args.update_freq
 	var tmp_colour Colour24
 
 	var seeds int32 = 0
@@ -108,18 +108,23 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 			continue
 		}
 
-		tmp_colour = pArray.TargetColourAt(int32(point.X), int32(point.Y), args)
+		tmp_colour = pArray.TargetColourAt(int32(point.X), int32(point.Y), args.blur, args.width, args.height)
 
 		tmp_colour = cspace.PopColour(tmp_colour)
 
 		// it's nice to know the algorithm is running
-		if count > ir_tag*tenth_of_pic && ir_tag < 10 {
-			fmt.Printf("[%s] %d%% of pixels filled\n", timestamp(), ir_tag*10)
+		if count > ir_tag*pic_fraction && ir_tag < args.update_freq {
+			fmt.Printf("[%s] %2.1f%% of pixels filled\n", timestamp(), float64(count * 100)/float64(args.width * args.height))
 			if args.draw_ir {
-				args.name = fmt.Sprintf("%s.%d.png", args.tag, ir_tag)
-				go draw(pArray.ImageNRGBA(args), args)
+				name := fmt.Sprintf("%s.%3d.png", args.tag, ir_tag)
+				go draw(pArray.ImageNRGBA(args.width, args.height, args.flip_draw), name)
 			}
 			ir_tag++
+
+			if args.update != nil {
+				go args.update(pArray.ImageNRGBA(args.width, args.height, args.flip_draw))
+			}
+
 		}
 
 		if count == MaxWidth*MaxHeight*15/16 {
@@ -147,6 +152,11 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 	}
 
 	args.name = origPicName
+
+	if args.update != nil {
+		go args.update(pArray.ImageNRGBA(args.width, args.height, args.flip_draw))
+	}
+
 	return
 }
 
@@ -304,6 +314,9 @@ type GenerateArgs struct {
 
 	height int
 	width int
+
+	update func(pic image.Image)
+	update_freq int32
 }
 
 func Generate(args GenerateArgs) {
@@ -354,5 +367,5 @@ func Generate(args GenerateArgs) {
 	ch := make(chan image.Point, args.chan_size)
 	_ = fillPixelArray(picture, colours, seedCh, ch, args)
 
-	draw(picture.ImageNRGBA(args), args)
+	draw(picture.ImageNRGBA(args.width, args.height, args.flip_draw), args.name)
 }

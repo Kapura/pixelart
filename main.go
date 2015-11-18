@@ -10,39 +10,42 @@ import (
 	"time"
 )
 
-func parseFlags() (args GenerateArgs){
+func parseFlags() (args GenerateArgs, gui bool){
 
 	var(
-	seedImagePath     string
-	seedRejectionRate float64
-	seedChroma        int
-	seedDupes         bool
+		seedImagePath     string
+		seedRejectionRate float64
+		seedChroma        int
+		seedDupes         bool
 
-	echospacing float64
+		echospacing float64
 
-	seedColour int
-	p_red      int
-	p_green    int
-	p_blue     int
+		seedColour int
+		p_red      int
+		p_green    int
+		p_blue     int
 
-	colourAxes  string
+		colourAxes  string
 
-	x int
-	y int
+		x int
+		y int
 
-	width  int
-	height int
+		width  int
+		height int
 
-	blur         int
-	ch_cap       int
-	cpu_cap      int
+		blur         int
+		ch_cap       int
+		cpu_cap      int
 
-	draw_intermediate bool
-	flip_draw         bool
+		draw_intermediate bool
+		flip_draw         bool
 
-	tag  string
-	name string
+		tag  string
+		name string
+
 	)
+
+	flag.BoolVar(&gui, "gui", true, "Use the GUI. Set to 'false' for CLI arguments")
 
 	flag.IntVar(&p_red, "seed-red", 0, "red value of the initial point")
 	flag.IntVar(&p_green, "seed-green", 0, "green value of the initial point")
@@ -76,6 +79,11 @@ func parseFlags() (args GenerateArgs){
 	flag.IntVar(&cpu_cap, "cpus", -1, "amount of cpu's used. 0 means default go runtime settings, <0 means 'use all' (default)")
 
 	flag.Parse()
+
+	if gui {
+		// gui enabled, ignore other args
+		return
+	}
 
 	if seedColour != 0x0 {
 		p_red = seedColour >> 16
@@ -151,6 +159,9 @@ func parseFlags() (args GenerateArgs){
 	args.height = height
 	args.width = width
 
+	args.update = nil
+	args.update_freq = 10
+
 	return
 
 }
@@ -160,12 +171,9 @@ func timestamp() string {
 	return fmt.Sprintf("%02d:%02d:%02d", hour, min, sec)
 }
 
-func main() {
-
+func CLImain(args GenerateArgs) {
 	var start_hour, start_min, start_sec = time.Now().Clock()
 	fmt.Printf("Start time: %d:%d:%d\n", start_hour, start_min, start_sec)
-
-	args := parseFlags()
 
 	Generate(args)
 
@@ -183,5 +191,17 @@ func main() {
 	}
 	end_hour -= start_hour
 	fmt.Printf("Image drawn in %d:%d:%d\n", end_hour, end_min, end_sec)
+
+}
+
+func main() {
+
+	args, gui := parseFlags()
+
+	if gui {
+		GUImain()
+	} else {
+		CLImain(args)
+	}
 
 }
