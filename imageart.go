@@ -59,6 +59,7 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 	var ir_tag int32 = 1
 	var pic_fraction int32 = int32(args.width*args.height) / args.update_freq
 	var tmp_colour Colour24
+	var time_format = "15:04:05"
 
 	var seeds int32 = 0
 	//put in the seed pixels
@@ -114,7 +115,7 @@ func fillPixelArray(pArray *PixelArray, cspace Colourspace, seedCh chan SeedPixe
 
 		// it's nice to know the algorithm is running
 		if count > ir_tag*pic_fraction && ir_tag < args.update_freq {
-			fmt.Printf("[%s] %2.1f%% of pixels filled\n", timestamp(), float64(count * 100)/float64(args.width * args.height))
+			fmt.Printf("[%s] %2.1f%% of pixels filled\n", time.Now().Format(time_format), float64(count * 100)/float64(args.width * args.height))
 			if args.draw_ir {
 				name := fmt.Sprintf("%s.%3d.png", args.tag, ir_tag)
 				go draw(pArray.ImageNRGBA(args.width, args.height, args.flip_draw), name)

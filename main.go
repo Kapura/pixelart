@@ -166,31 +166,17 @@ func parseFlags() (args GenerateArgs, gui bool){
 
 }
 
-func timestamp() string {
-	var hour, min, sec = time.Now().Clock()
-	return fmt.Sprintf("%02d:%02d:%02d", hour, min, sec)
-}
-
 func CLImain(args GenerateArgs) {
-	var start_hour, start_min, start_sec = time.Now().Clock()
-	fmt.Printf("Start time: %d:%d:%d\n", start_hour, start_min, start_sec)
+
+	var time_format = "15:04:05"
+	var start_time = time.Now()
+	fmt.Printf("Start time: %s\n", start_time.Format(time_format))
 
 	Generate(args)
 
-	var end_hour, end_min, end_sec = time.Now().Clock()
-	fmt.Printf("End time: %d:%d:%d\n", end_hour, end_min, end_sec)
-	end_sec -= start_sec
-	if end_sec < 0 {
-		end_sec = 60 + end_sec
-		end_min -= 1
-	}
-	end_min -= start_min
-	if end_min < 0 {
-		end_min = 60 + end_min
-		end_hour -= 1
-	}
-	end_hour -= start_hour
-	fmt.Printf("Image drawn in %d:%d:%d\n", end_hour, end_min, end_sec)
+	var end_time = time.Now()
+	fmt.Printf("End time: %s\n", end_time.Format(time_format))
+	fmt.Printf("Image drawn in %s\n", end_time.Sub(start_time).String())
 
 }
 

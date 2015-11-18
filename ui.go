@@ -111,7 +111,7 @@ func onRun(data map[string]*dataField, output map[string]gxui.Label) {
 func initialise(data map[string]*dataField) {
 	data["chan size"].Put("8")
 	data["blur"].Put("1")
-	data["cpus"].Put("0")
+	data["cpus"].Put(fmt.Sprint(runtime.NumCPU()))
 	data["update freq"].Put("10")
 	data["colour basis"].Put("rgb")
 	data["echospacing"].Put("0")
@@ -130,9 +130,9 @@ func validate(data map[string]*dataField) (valid bool, args GenerateArgs) {
 	e_msg := ""
 
 	cpu, err := strconv.Atoi(data["cpus"].Get())
-	if err != nil || cpu < 0 || cpu > runtime.NumCPU() {
+	if err != nil || cpu < 1 || cpu > runtime.NumCPU() {
 		valid = false
-		e_msg = fmt.Sprintf("CPUs must be between 0 and %d", runtime.NumCPU())
+		e_msg = fmt.Sprintf("CPUs must be between 1 and %d", runtime.NumCPU())
 		data["cpus"].SetError(e_msg)
 	} else {
 		data["cpus"].SetError("")
@@ -234,31 +234,12 @@ func validate(data map[string]*dataField) (valid bool, args GenerateArgs) {
 		args.start_blue = int(sc) & 0x0000FF
 	}
 
-	sx, err := strconv.Atoi(data["start X"].Get())
-	if err != nil || sx < 0 || sx >= 4096 {
-		valid = false
-		e_msg = "Start X should be between 0 and 4095"
-		data["start X"].SetError(e_msg)
-	} else {
-		data["start X"].SetError("")
-		args.start_x = sx
-	}
-
-	sy, err := strconv.Atoi(data["start Y"].Get())
-	if err != nil || sy < 0 || sy >= 4096 {
-		valid = false
-		e_msg = "Start Y should be between 0 and 4095"
-		data["start Y"].SetError(e_msg)
-	} else {
-		data["start Y"].SetError("")
-		args.start_y = sy
-	}
-
 	w, err := strconv.Atoi(data["width"].Get())
 	if err != nil || w < 0 || w > 4096 {
 		valid = false
 		e_msg = "Width should be between 0 and 4096"
 		data["width"].SetError(e_msg)
+		args.width = w
 	} else {
 		data["width"].SetError("")
 		args.width = w
@@ -269,9 +250,30 @@ func validate(data map[string]*dataField) (valid bool, args GenerateArgs) {
 		valid = false
 		e_msg = "Height should be between 0 and 4096"
 		data["height"].SetError(e_msg)
+		args.height = h
 	} else {
 		data["height"].SetError("")
 		args.height = h
+	}
+
+	sx, err := strconv.Atoi(data["start X"].Get())
+	if err != nil || sx < 0 || sx >= args.width {
+		valid = false
+		e_msg = fmt.Sprintf("Start X should be between 0 and %d", args.width-1)
+		data["start X"].SetError(e_msg)
+	} else {
+		data["start X"].SetError("")
+		args.start_x = sx
+	}
+
+	sy, err := strconv.Atoi(data["start Y"].Get())
+	if err != nil || sy < 0 || sy >= args.height {
+		valid = false
+		e_msg = fmt.Sprintf("Start Y should be between 0 and %d", args.height-1)
+		data["start Y"].SetError(e_msg)
+	} else {
+		data["start Y"].SetError("")
+		args.start_y = sy
 	}
 
 	args.tag = data["tag"].Get()

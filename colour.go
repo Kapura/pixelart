@@ -76,22 +76,22 @@ func (c Pixel) Blue() int32 {
 	return c.Colour.Blue()
 }
 
-func (c *Pixel) NRGBA(flip_draw bool) *color.NRGBA {
+func (c *Pixel) RGBA(flip_draw bool) *color.RGBA {
 	if flip_draw {
-		return &color.NRGBA{255 - c.Colour.red, 255 - c.Colour.green, 255 - c.Colour.blue, FullAlpha}
+		return &color.RGBA{255 - c.Colour.red, 255 - c.Colour.green, 255 - c.Colour.blue, FullAlpha}
 	} else {
-		return &color.NRGBA{c.Colour.red, c.Colour.green, c.Colour.blue, FullAlpha}
+		return &color.RGBA{c.Colour.red, c.Colour.green, c.Colour.blue, FullAlpha}
 	}
 }
 
 // representation of the image as a 2D array
 type PixelArray [MaxWidth][MaxHeight]Pixel
 
-func (p *PixelArray) ImageNRGBA(width, height int, flip_draw bool) *image.NRGBA {
-	pic := image.NewNRGBA(image.Rect(0, 0, width, height))
+func (p *PixelArray) ImageNRGBA(width, height int, flip_draw bool) *image.RGBA {
+	pic := image.NewRGBA(image.Rect(0, 0, width, height))
 	for x := 0; x < width; x++ {
 		for y := 0; y < height; y++ {
-			pic.Set(x, y, p[x][y].NRGBA(flip_draw))
+			pic.Set(x, y, p[x][y].RGBA(flip_draw))
 		}
 	}
 	return pic
@@ -161,7 +161,7 @@ func (c *PixelArray) TargetColourAt(x, y, blur int32, width, height int) Colour2
 }
 
 // draw function for the final image
-func draw(pic *image.NRGBA, name string) {
+func draw(pic *image.RGBA, name string) {
 	fmt.Println("Drawing", name)
 	file, err := os.Create(name)
 
